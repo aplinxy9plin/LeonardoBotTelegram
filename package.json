@@ -1,0 +1,24 @@
+{
+  "name": "Leonardo Bot",
+  "version": "1.0.0",
+  "description": "Telegram bot",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Nikita Aplin (https://github.com/aplinxy9plin)",
+  "license": "TOP4EK",
+  "dependencies": {
+    "moment": "^2.18.1",
+    "moment-timezone": "^0.5.13",
+    "request": "^2.81.0",
+    "telegraf": "^3.16.3",
+    "vk-io": "^3.1.7",
+    "webp-converter": "^2.1.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aplinxy9plin/LeonardoBotTelegram.git"
+  }
+}
