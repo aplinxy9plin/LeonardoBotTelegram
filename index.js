@@ -39,11 +39,12 @@ app.command('chatid', ({
 
 
 app.on('text', (ctx) => {
+  var message = ctx.update.message.text
   if(ctx.update.message.text == 'Мне нравится'){
-    var message = '1'
+    message = '1'
   }
   if(ctx.update.message.text == 'Стремная'){
-    var message = '3'
+    message = '3'
   }
   vk.api.messages.send({
     peer_id: -91050183,
