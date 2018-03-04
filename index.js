@@ -30,10 +30,24 @@ app.command('start', ({
   )
 })
 
+app.command('chatid', ({
+  from,
+  reply
+}) => {
+  return reply(from.id)
+})
+
+
 app.on('text', (ctx) => {
+  if(ctx.update.message.text == 'Мне нравится'){
+    var message = '1'
+  }
+  if(ctx.update.message.text == 'Стремная'){
+    var message = '3'
+  }
   vk.api.messages.send({
     peer_id: -91050183,
-    message: ctx.update.message.text,
+    message: message,
     v: VK_VERSION
   }).catch((error) => {
     console.error(error)
