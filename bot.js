@@ -26,8 +26,6 @@ con.connect(function(err) {
 });
 
 const VK_VERSION = '5.65'
-
-const vk = new VK({ token: config.vk_token })
 const app = new Telegraf(config.tg_token)
 
 let currentUser
@@ -38,7 +36,7 @@ app.command('start', ({ from , reply}) => {
   con.query("SELECT status, chat_id, token FROM leonardo WHERE chat_id = "+chat_id+"", function (err, result, fields) {
     if(result[0] == undefined){
       console.log('empty bitch')
-      con.query("INSERT INTO leonardo (chat_id) VALUES ("+from.id+")", function (err, result) {
+      con.query("INSERT INTO leonardo (chat_id, status) VALUES ("+from.id+", 'login_empty')", function (err, result) {
         reply('Привет, необходимо авторизироваться. Напиши свой логин VK.')
         console.log("User recorded to database");
       });
@@ -52,6 +50,7 @@ app.command('start', ({ from , reply}) => {
           .resize()
           .extra()
         )
+        var vk = new VK({ token: result[0].token })
         vk.api.messages.send({
           peer_id: -91050183,
           message: '1',
@@ -74,10 +73,13 @@ app.command('chat_id', ({
 
 
 app.on('text', (ctx) => {
+  var reply = ctx.reply
   var message = ctx.update.message.text
   var chat_id = ctx.from.id
-  con.query("SELECT status, chat_id, token, login, password FROM leonardo WHERE chat_id = "+chat_id+"", function (err, result, fields) {
-    if(result[0] == undefined){
+  con.query("SELECT status, chat_id, token, login, password, long_poll FROM leonardo WHERE chat_id = "+chat_id+"", function (err, result, fields) {
+    if(err) throw err;
+    console.log(result[0]);
+    if(result[0].status == undefined){
       console.log('empty bitch')
       con.query("INSERT INTO leonardo (chat_id, status) VALUES ("+from.id+",'login_empty')", function (err, result) {
         reply('Привет, необходимо авторизироваться. Напиши свой логин VK.')
@@ -86,7 +88,7 @@ app.on('text', (ctx) => {
     }else{
       var status = result[0].status
       if(status == 'login_empty'){
-        if(message !== 'Да' || message !== 'Нет'){
+        if(message !== 'Да' && message !== 'Нет'){
           con.query("UPDATE leonardo SET login = '"+message+"' WHERE chat_id = "+chat_id+"")
           reply('Логин: '+message+' ?', Markup
             .keyboard(['Да','Нет'])
@@ -105,7 +107,7 @@ app.on('text', (ctx) => {
         }
       }
       if(status == 'password_empty'){
-        if(message !== 'Да' || message !== 'Нет'){
+        if(message !== 'Да' && message !== 'Нет'){
           con.query("UPDATE leonardo SET password = '"+message+"' WHERE chat_id = "+chat_id+"")
           reply('Пароль: '+message+' ?', Markup
             .keyboard(['Да','Нет'])
@@ -127,12 +129,39 @@ app.on('text', (ctx) => {
           }
         }
       }
+      if(status == 'login_empty1'){
+        if(message !== 'Да' && message !== 'Нет'){
+          con.query("UPDATE leonardo SET login = '"+message+"' WHERE chat_id = "+chat_id+"")
+          reply('Логин: '+message+' ?', Markup
+            .keyboard(['Да','Нет'])
+            .resize()
+            .extra()
+          )
+        }else{
+          if(message == 'Да'){
+            updateStatus('data_check', chat_id)
+            reply('Ваши данные:\nЛогин: '+result[0].login+'\nПароль: '+result[0].password+'\nВсе верно?', Markup
+              .keyboard(['Да','Нет'])
+              .resize()
+              .extra()
+            )
+          }
+          if(message == 'Нет'){
+            updateStatus('login_empty', chat_id)
+            reply('Введите логин VK')
+          }
+        }
+      }
       if(status == 'data_check'){
         if(message == 'Да'){
           vktoken.getAccessToken(result[0].login, result[0].password, function(error, token){
           	if(token !== 'notoken'){
-              con.query("UPDATE leonardo SET token = '"+token+"' WHERE chat_id = "+chat_id+"")
-
+              con.query("UPDATE leonardo SET token = '"+token+"', status = 'good' WHERE chat_id = "+chat_id+"")
+              reply('Поехали', Markup
+                .keyboard(['Мне нравится','Стремная'])
+                .resize()
+                .extra()
+              )
             }else{
               reply('Данные не верны. Введите логин.')
               updateStatus('login_empty',chat_id)
@@ -140,32 +169,66 @@ app.on('text', (ctx) => {
           });
         }else if(message == 'Нет'){
           reply('Выбирите то, что хотите изменить.', Markup
-            .keyboard(['Логин','Пароль'])
+            .keyboard(['Логин','Пароль','',' Ничего'])
             .resize()
             .extra()
           )
           updateStatus('data_change', chat_id)
         }
       }
+      if(status == 'data_change'){
+        if(message == 'Логин'){
+          updateStatus('login_empty1', chat_id)
+          reply('Введите логин VK')
+        }else if(message == 'Пароль'){
+          updateStatus('password_empty', chat_id)
+          reply('Введите пароль VK')
+        }else if(message == 'Ничего'){
+          updateStatus('data_check', chat_id)
+          reply('Ваши данные:\nЛогин: '+result[0].login+'\nПароль: '+result[0].password+'\nВсе верно?', Markup
+            .keyboard(['Да','Нет'])
+            .resize()
+            .extra()
+          )
+        }else{
+          reply('Выбирите то, что хотите изменить.', Markup
+            .keyboard(['Логин','Пароль','','Ничего'])
+            .resize()
+            .extra()
+          )
+        }
+      }
+      if(status == 'good'){
+        var vk = new VK({ token: result[0].token })
+        if(result[0].long_poll == 0){
+          vk.longpoll.start().then(() => {
+            console.log('Long Poll is starteded')
+            con.query("UPDATE leonardo SET long_poll = 1 WHERE chat_id = "+chat_id+"")
+          }).catch((error) => {
+            console.error(error)
+          })
+        }
+        vkblya(vk, chat_id)
+        if(ctx.update.message.text == 'Мне нравится'){
+          message = '1'
+        }
+        if(ctx.update.message.text == 'Стремная'){
+          message = '3'
+        }
+        return vk.api.messages.send({
+          peer_id: -91050183,
+          message: message,
+          v: VK_VERSION
+        }).catch((error) => {
+          console.error(error)
+        })
+      }
     }
   })
-  if(ctx.update.message.text == 'Мне нравится'){
-    message = '1'
-  }
-  if(ctx.update.message.text == 'Стремная'){
-    message = '3'
-  }
-  /*vk.api.messages.send({
-    peer_id: -91050183,
-    message: message,
-    v: VK_VERSION
-  }).catch((error) => {
-    console.error(error)
-  })*/
 })
 
 app.on(['sticker', 'photo'], (ctx) => {
-  if (ctx.from.id != config.tg_user) return false
+  if (ctx.from.id != chat_id) return false
   if (!currentUser) return ctx.reply('❗️Set VK user!❗️')
 
   let photo = ctx.updateSubTypes.includes('photo')
@@ -190,7 +253,7 @@ app.on(['sticker', 'photo'], (ctx) => {
 })
 
 app.on('voice', ctx => {
-  if (ctx.from.id != config.tg_user) return false
+  if (ctx.from.id != chat_id) return false
   if (!currentUser) return ctx.reply('❗️Set VK user!❗️')
 
   app.telegram.getFileLink(ctx.message.voice).then(link => {
@@ -224,82 +287,79 @@ function uploadToVK(file, text, stream = false) {
     })
   })
 }
+function vkblya(vk, chat_id){
 
-vk.longpoll.start().then(() => {
-  console.log('Long Poll is started')
-}).catch((error) => {
-  console.error(error)
-})
 
-vk.longpoll.on('message', (message) => {
-  for (let i = 0; i < message.flags.length; i++) {
-    if (message.flags[i] == 'outbox') return false
-  }
-  if(!(message.text >= 0 && message.text <= 10)){
-    if(message.peer == -91050183){
-      if (Object.keys(message.attachments).length) {
-        getMessage(message.id)
-        app.telegram.sendMessage(config.tg_user, message.text)
-      } else {
-        app.telegram.sendMessage(config.tg_user, message.text)
+  vk.longpoll.on('message', (message) => {
+    for (let i = 0; i < message.flags.length; i++) {
+      if (message.flags[i] == 'outbox') return false
+    }
+    if(!(message.text >= 0 && message.text <= 10)){
+      if(message.peer == -91050183){
+        if (Object.keys(message.attachments).length) {
+          getMessage(message.id)
+          app.telegram.sendMessage(chat_id, message.text)
+        } else {
+          //app.telegram.sendMessage(chat_id, message.text)
+        }
       }
     }
+  })
+
+  function getMessage(id) {
+    vk.api.messages.getById({
+      message_ids: id,
+      v: VK_VERSION
+    }).then((message) => {
+      message = message.items[0]
+      console.log(message.attachments);
+      parseAttachments(message.attachments, false)
+    }).catch(error => console.error(error))
   }
-})
 
-function getMessage(id) {
-  vk.api.messages.getById({
-    message_ids: id,
-    v: VK_VERSION
-  }).then((message) => {
-    message = message.items[0]
-    console.log(message.attachments);
-    parseAttachments(message.attachments, false)
-  }).catch(error => console.error(error))
-}
-
-function parseAttachments(attachments, wall) {
-  for (let i = 0; i < attachments.length; i++) {
-    let atta = attachments[i]
-    switch (atta.type) {
-      case 'photo':
-        let attaimg = atta.photo.photo_1280 || atta.photo.photo_807 || atta.photo.photo_604 || atta.photo.photo_130 || atta.photo.photo_75
-        app.telegram.sendPhoto(config.tg_user, attaimg, { caption: atta.photo.text, disable_notification: true },Markup
-          .keyboard(config.keyboard)
-          .resize()
-          .extra())
-        break
-      case 'video':
-        vk.api.video.get({
-          videos: atta.video.owner_id + '_' + atta.video.id + '_' + atta.video.access_key,
-          v: VK_VERSION
-        }).then((video) => {
-          let text = wall ? 'Video from wall: ' + video.items[0].player : 'Video: ' + video.items[0].player
-          app.telegram.sendMessage(config.tg_user, text, Extra.notifications(false))
-        }).catch((error) => {
-          console.error(error)
-        })
-        break
-      case 'wall':
-        if (atta.wall.text) {
-          app.telegram.sendMessage(config.tg_user, 'Post on wall:\n' + atta.wall.text, Extra.notifications(false)).then(() => {
-            if (atta.wall.attachments)
-              parseAttachments(atta.wall.attachments, true)
+  function parseAttachments(attachments, wall) {
+    for (let i = 0; i < attachments.length; i++) {
+      let atta = attachments[i]
+      switch (atta.type) {
+        case 'photo':
+          let attaimg = atta.photo.photo_1280 || atta.photo.photo_807 || atta.photo.photo_604 || atta.photo.photo_130 || atta.photo.photo_75
+          app.telegram.sendPhoto(chat_id, attaimg, { caption: atta.photo.text, disable_notification: true },Markup
+            .keyboard(config.keyboard)
+            .resize()
+            .extra())
+          break
+        case 'video':
+          vk.api.video.get({
+            videos: atta.video.owner_id + '_' + atta.video.id + '_' + atta.video.access_key,
+            v: VK_VERSION
+          }).then((video) => {
+            let text = wall ? 'Video from wall: ' + video.items[0].player : 'Video: ' + video.items[0].player
+            app.telegram.sendMessage(chat_id, text, Extra.notifications(false))
+          }).catch((error) => {
+            console.error(error)
           })
-        }
-        break
-      case 'link':
-        app.telegram.sendMessage(config.tg_user, 'URL: ' + atta.link.url + '\nTITLE: ' + atta.link.title, Extra.notifications(false))
-        break
-      case 'sticker':
-        app.telegram.sendPhoto(config.tg_user, atta.sticker.photo_256, Extra.notifications(false))
-        break
-      case 'doc':
-        if(atta.doc.type)
-          app.telegram.sendVoice(config.tg_user, atta.doc.preview.audio_msg.link_ogg, Extra.notifications(false))
-        break
-      default:
-        app.telegram.sendMessage(config.tg_user, '*' + atta.type + '*', Extra.notifications(false))
+          break
+        case 'wall':
+          if (atta.wall.text) {
+            app.telegram.sendMessage(chat_id, 'Post on wall:\n' + atta.wall.text, Extra.notifications(false)).then(() => {
+              if (atta.wall.attachments)
+                parseAttachments(atta.wall.attachments, true)
+            })
+          }
+          break
+        case 'link':
+          app.telegram.sendMessage(chat_id, 'URL: ' + atta.link.url + '\nTITLE: ' + atta.link.title, Extra.notifications(false))
+          break
+        case 'sticker':
+          app.telegram.sendPhoto(chat_id, atta.sticker.photo_256, Extra.notifications(false))
+          break
+        case 'doc':
+          if(atta.doc.type)
+            app.telegram.sendVoice(chat_id, atta.doc.preview.audio_msg.link_ogg, Extra.notifications(false))
+          break
+        default:
+          app.telegram.sendMessage(chat_id, '*' + atta.type + '*', Extra.notifications(false))
+      }
     }
   }
 }
